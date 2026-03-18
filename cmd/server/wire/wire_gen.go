@@ -22,9 +22,8 @@ import (
 func NewWire(viperViper *viper.Viper, logger *log.Logger) (*gin.Engine, func(), error) {
 	handlerHandler := handler.NewHandler(logger)
 	serviceService := service.NewService(logger)
-	db := repository.NewDb()
-	repositoryRepository := repository.NewRepository(logger, db)
-	sensitiveWordRepository, err := repository.NewSensitiveWordRepository(repositoryRepository, viperViper)
+	repositoryRepository := repository.NewRepository(logger, viperViper)
+	sensitiveWordRepository, err := repository.NewSensitiveWordRepository(repositoryRepository)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -42,7 +41,7 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*gin.Engine, func(), 
 
 var ServerSet = wire.NewSet(server.NewServerHTTP)
 
-var RepositorySet = wire.NewSet(repository.NewDb, repository.NewRepository, repository.NewSensitiveWordRepository)
+var RepositorySet = wire.NewSet(repository.NewRepository, repository.NewSensitiveWordRepository)
 
 var ServiceSet = wire.NewSet(service.NewService, service.NewSensitiveWordService)
 

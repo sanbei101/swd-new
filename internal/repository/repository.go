@@ -2,28 +2,24 @@ package repository
 
 import (
 	"swd-new/pkg/log"
+
+	"github.com/spf13/viper"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 type Repository struct {
-	db *gorm.DB
-	//rdb    *redis.Client
+	db     *gorm.DB
 	logger *log.Logger
 }
 
-func NewRepository(logger *log.Logger, db *gorm.DB) *Repository {
+func NewRepository(logger *log.Logger, conf *viper.Viper) *Repository {
+	db, err := gorm.Open(postgres.Open(conf.GetString("data.postgres.dsn")), &gorm.Config{})
+	if err != nil {
+		panic(err)
+	}
 	return &Repository{
-		db: db,
-		//rdb:    rdb,
+		db:     db,
 		logger: logger,
 	}
-}
-func NewDb() *gorm.DB {
-	// TODO: init db
-	//db, err := gorm.Open(mysql.Open(conf.GetString("data.mysql.user")), &gorm.Config{})
-	//if err != nil {
-	//	panic(err)
-	//}
-	//return db
-	return &gorm.DB{}
 }
