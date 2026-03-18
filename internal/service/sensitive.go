@@ -86,6 +86,13 @@ func (s *sensitiveWordService) Check(text string) (*SensitiveWordCheckResult, er
 
 	textRunes := []rune(text)
 	matches := matchAll(root, maxWordLen, textRunes)
+	if len(matches) == 0 {
+		return &SensitiveWordCheckResult{
+			Contains:     false,
+			FilteredText: text,
+			Matches:      []SensitiveWordMatch{},
+		}, nil
+	}
 	return &SensitiveWordCheckResult{
 		Contains:     len(matches) > 0,
 		FilteredText: replaceWithAsterisk(textRunes, matches),
@@ -225,7 +232,7 @@ func matchAll(root *sensitiveWordTrieNode, maxWordLen int, textRunes []rune) []S
 		return []SensitiveWordMatch{}
 	}
 
-	candidates := make([]SensitiveWordMatch, 0)
+	candidates := make([]SensitiveWordMatch, 0, 8)
 	for start := range textRunes {
 		node := root
 		limit := len(textRunes)
@@ -296,11 +303,10 @@ func matchAll(root *sensitiveWordTrieNode, maxWordLen int, textRunes []rune) []S
 }
 
 func replaceWithAsterisk(textRunes []rune, matches []SensitiveWordMatch) string {
-	runes := append([]rune(nil), textRunes...)
 	for _, match := range matches {
-		for i := match.StartPos; i < match.EndPos && i < len(runes); i++ {
-			runes[i] = '*'
+		for i := match.StartPos; i < match.EndPos; i++ {
+			textRunes[i] = '*'
 		}
 	}
-	return string(runes)
+	return string(textRunes)
 }
