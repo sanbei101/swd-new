@@ -1,13 +1,14 @@
 package log
 
 import (
+	"os"
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
-	"os"
-	"time"
 )
 
 const LOGGER_KEY = "zapLogger"
@@ -87,7 +88,6 @@ func initZap(conf *viper.Viper) *Logger {
 		return &Logger{zap.New(core, zap.Development(), zap.AddCaller(), zap.AddStacktrace(zap.ErrorLevel))}
 	}
 	return &Logger{zap.New(core, zap.AddCaller(), zap.AddStacktrace(zap.ErrorLevel))}
-
 }
 
 // 自定义时间编码器

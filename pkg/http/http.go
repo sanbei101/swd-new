@@ -2,17 +2,17 @@ package http
 
 import (
 	"context"
-	"github.com/gin-gonic/gin"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 func Run(r *gin.Engine, addr string) {
-
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: r,

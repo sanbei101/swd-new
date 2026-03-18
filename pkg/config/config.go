@@ -3,8 +3,9 @@ package config
 import (
 	"flag"
 	"fmt"
-	"github.com/spf13/viper"
 	"os"
+
+	"github.com/spf13/viper"
 )
 
 func NewConfig() *viper.Viper {
@@ -18,8 +19,8 @@ func NewConfig() *viper.Viper {
 	}
 	fmt.Println("load conf file:", envConf)
 	return getConfig(envConf)
-
 }
+
 func getConfig(path string) *viper.Viper {
 	conf := viper.New()
 	conf.SetConfigFile(path)
