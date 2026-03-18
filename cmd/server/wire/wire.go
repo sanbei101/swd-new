@@ -29,7 +29,7 @@ var ServiceSet = wire.NewSet(
 
 var HandlerSet = wire.NewSet(
 	handler.NewHandler,
-	handler.NewSensitiveWordHandler,
+	handler.NewSensitiveCheckHandler,
 )
 
 func NewWire(*viper.Viper, *log.Logger) (*gin.Engine, func(), error) {

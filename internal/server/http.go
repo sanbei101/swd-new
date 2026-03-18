@@ -11,7 +11,7 @@ import (
 
 func NewServerHTTP(
 	logger *log.Logger,
-	sensitiveWordHandler *handler.SensitiveWordHandler,
+	sensitiveCheckHandler *handler.SensitiveCheckHandler,
 ) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
@@ -23,7 +23,11 @@ func NewServerHTTP(
 			"say": "Hi Nunu!",
 		})
 	})
-	r.POST("/check", sensitiveWordHandler.Check)
+	r.POST("/sensitive_check", sensitiveCheckHandler.Check)
+	r.GET("/word_manage", sensitiveCheckHandler.ListWords)
+	r.POST("/word_manage", sensitiveCheckHandler.CreateWord)
+	r.PUT("/word_manage/:id", sensitiveCheckHandler.UpdateWord)
+	r.DELETE("/word_manage/:id", sensitiveCheckHandler.DeleteWord)
 
 	return r
 }

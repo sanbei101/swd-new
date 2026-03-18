@@ -5,9 +5,12 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"sync"
 
 	"swd-new/internal/model"
 	"swd-new/internal/repository"
+
+	"gorm.io/gorm"
 )
 
 type SensitiveWordMatch struct {
@@ -23,9 +26,25 @@ type SensitiveWordCheckResult struct {
 	Matches      []SensitiveWordMatch `json:"matches"`
 }
 
+type CreateSensitiveWordInput struct {
+	Word string `json:"word"`
+	Type string `json:"type"`
+}
+
+type UpdateSensitiveWordInput struct {
+	Word string `json:"word"`
+	Type string `json:"type"`
+}
+
 type SensitiveWordService interface {
 	Check(text string) (*SensitiveWordCheckResult, error)
+	ListWords(ctx context.Context) ([]model.SensitiveWord, error)
+	CreateWord(ctx context.Context, input CreateSensitiveWordInput) (*model.SensitiveWord, error)
+	UpdateWord(ctx context.Context, id uint, input UpdateSensitiveWordInput) (*model.SensitiveWord, error)
+	DeleteWord(ctx context.Context, id uint) error
 }
+
+var ErrInvalidSensitiveWordID = errors.New("invalid sensitive word id")
 
 type sensitiveWordTrieNode struct {
 	children map[rune]*sensitiveWordTrieNode
@@ -36,26 +55,21 @@ type sensitiveWordTrieNode struct {
 
 type sensitiveWordService struct {
 	*Service
+	repository repository.SensitiveWordRepository
+	mu         sync.RWMutex
 	root       *sensitiveWordTrieNode
 	maxWordLen int
 }
 
 func NewSensitiveWordService(service *Service, sensitiveWordRepository repository.SensitiveWordRepository) (SensitiveWordService, error) {
-	words, err := sensitiveWordRepository.List(context.Background())
-	if err != nil {
+	svc := &sensitiveWordService{
+		Service:    service,
+		repository: sensitiveWordRepository,
+	}
+	if err := svc.reloadTrie(context.Background()); err != nil {
 		return nil, err
 	}
-	if len(words) == 0 {
-		return nil, errors.New("no sensitive words loaded from postgres")
-	}
-
-	root, maxWordLen := buildSensitiveWordTrie(words)
-
-	return &sensitiveWordService{
-		Service:    service,
-		root:       root,
-		maxWordLen: maxWordLen,
-	}, nil
+	return svc, nil
 }
 
 func (s *sensitiveWordService) Check(text string) (*SensitiveWordCheckResult, error) {
@@ -64,13 +78,106 @@ func (s *sensitiveWordService) Check(text string) (*SensitiveWordCheckResult, er
 		return nil, errors.New("text must not be empty")
 	}
 
+	s.mu.RLock()
+	root := s.root
+	maxWordLen := s.maxWordLen
+	s.mu.RUnlock()
+
 	textRunes := []rune(text)
-	matches := s.matchAll(textRunes)
+	matches := matchAll(root, maxWordLen, textRunes)
 	return &SensitiveWordCheckResult{
 		Contains:     len(matches) > 0,
 		FilteredText: replaceWithAsterisk(textRunes, matches),
 		Matches:      matches,
 	}, nil
+}
+
+func (s *sensitiveWordService) ListWords(ctx context.Context) ([]model.SensitiveWord, error) {
+	return s.repository.List(ctx)
+}
+
+func (s *sensitiveWordService) CreateWord(ctx context.Context, input CreateSensitiveWordInput) (*model.SensitiveWord, error) {
+	word, category, err := normalizeSensitiveWordInput(input.Word, input.Type)
+	if err != nil {
+		return nil, err
+	}
+
+	entity := &model.SensitiveWord{
+		Word: word,
+		Type: category,
+	}
+	if err := s.repository.Create(ctx, entity); err != nil {
+		return nil, err
+	}
+	if err := s.reloadTrie(ctx); err != nil {
+		return nil, err
+	}
+	return entity, nil
+}
+
+func (s *sensitiveWordService) UpdateWord(ctx context.Context, id uint, input UpdateSensitiveWordInput) (*model.SensitiveWord, error) {
+	word, category, err := normalizeSensitiveWordInput(input.Word, input.Type)
+	if err != nil {
+		return nil, err
+	}
+
+	entity := &model.SensitiveWord{
+		ID:   id,
+		Word: word,
+		Type: category,
+	}
+	if err := s.repository.Update(ctx, entity); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("sensitive word not found")
+		}
+		return nil, err
+	}
+	if err := s.reloadTrie(ctx); err != nil {
+		return nil, err
+	}
+	return s.repository.GetByID(ctx, id)
+}
+
+func (s *sensitiveWordService) DeleteWord(ctx context.Context, id uint) error {
+	if err := s.repository.Delete(ctx, id); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("sensitive word not found")
+		}
+		return err
+	}
+	return s.reloadTrie(ctx)
+}
+
+func (s *sensitiveWordService) reloadTrie(ctx context.Context) error {
+	words, err := s.repository.List(ctx)
+	if err != nil {
+		return err
+	}
+	if len(words) == 0 {
+		return errors.New("no sensitive words loaded from postgres")
+	}
+
+	root, maxWordLen := buildSensitiveWordTrie(words)
+
+	s.mu.Lock()
+	s.root = root
+	s.maxWordLen = maxWordLen
+	s.mu.Unlock()
+	return nil
+}
+
+func normalizeSensitiveWordInput(word, category string) (string, string, error) {
+	word = strings.TrimSpace(word)
+	if word == "" {
+		return "", "", errors.New("word must not be empty")
+	}
+
+	category = strings.TrimSpace(category)
+	if category == "" {
+		category = "default"
+	}
+
+	return word, category, nil
 }
 
 func buildSensitiveWordTrie(words []model.SensitiveWord) (*sensitiveWordTrieNode, int) {
@@ -107,16 +214,16 @@ func buildSensitiveWordTrie(words []model.SensitiveWord) (*sensitiveWordTrieNode
 	return root, maxWordLen
 }
 
-func (s *sensitiveWordService) matchAll(textRunes []rune) []SensitiveWordMatch {
-	if len(textRunes) == 0 || s.root == nil || s.maxWordLen == 0 {
+func matchAll(root *sensitiveWordTrieNode, maxWordLen int, textRunes []rune) []SensitiveWordMatch {
+	if len(textRunes) == 0 || root == nil || maxWordLen == 0 {
 		return []SensitiveWordMatch{}
 	}
 
 	candidates := make([]SensitiveWordMatch, 0)
 	for start := range textRunes {
-		node := s.root
+		node := root
 		limit := len(textRunes)
-		if maxEnd := start + s.maxWordLen; maxEnd < limit {
+		if maxEnd := start + maxWordLen; maxEnd < limit {
 			limit = maxEnd
 		}
 

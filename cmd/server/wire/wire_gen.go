@@ -31,8 +31,8 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*gin.Engine, func(), 
 	if err != nil {
 		return nil, nil, err
 	}
-	sensitiveWordHandler := handler.NewSensitiveWordHandler(handlerHandler, sensitiveWordService)
-	engine := server.NewServerHTTP(logger, sensitiveWordHandler)
+	sensitiveCheckHandler := handler.NewSensitiveCheckHandler(handlerHandler, sensitiveWordService)
+	engine := server.NewServerHTTP(logger, sensitiveCheckHandler)
 	return engine, func() {
 	}, nil
 }
@@ -45,4 +45,4 @@ var RepositorySet = wire.NewSet(repository.NewRepository, repository.NewSensitiv
 
 var ServiceSet = wire.NewSet(service.NewService, service.NewSensitiveWordService)
 
-var HandlerSet = wire.NewSet(handler.NewHandler, handler.NewSensitiveWordHandler)
+var HandlerSet = wire.NewSet(handler.NewHandler, handler.NewSensitiveCheckHandler)
