@@ -73,33 +73,6 @@ func NewSensitiveWordService(service *Service, sensitiveWordRepository repositor
 	return svc, nil
 }
 
-func (s *sensitiveWordService) Check(text string) (*SensitiveWordCheckResult, error) {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return nil, errors.New("text must not be empty")
-	}
-
-	s.mu.RLock()
-	root := s.root
-	maxWordLen := s.maxWordLen
-	s.mu.RUnlock()
-
-	textRunes := []rune(text)
-	matches := matchAll(root, maxWordLen, textRunes)
-	if len(matches) == 0 {
-		return &SensitiveWordCheckResult{
-			Contains:     false,
-			FilteredText: text,
-			Matches:      []SensitiveWordMatch{},
-		}, nil
-	}
-	return &SensitiveWordCheckResult{
-		Contains:     len(matches) > 0,
-		FilteredText: replaceWithAsterisk(textRunes, matches),
-		Matches:      matches,
-	}, nil
-}
-
 func (s *sensitiveWordService) ListWords(ctx context.Context, pageNum, pageSize int) (*response.Page[[]model.SensitiveWord], error) {
 	pageNum, pageSize, offset, limit := response.PageOffset(pageNum, pageSize)
 	words, total, err := s.repository.ListPage(ctx, offset, limit)
@@ -161,6 +134,33 @@ func (s *sensitiveWordService) DeleteWord(ctx context.Context, id uint) error {
 	return s.reloadTrie(ctx)
 }
 
+func (s *sensitiveWordService) Check(text string) (*SensitiveWordCheckResult, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil, errors.New("text must not be empty")
+	}
+
+	s.mu.RLock()
+	root := s.root
+	maxWordLen := s.maxWordLen
+	s.mu.RUnlock()
+
+	textRunes := []rune(text)
+	matches := matchAll(root, maxWordLen, textRunes)
+	if len(matches) == 0 {
+		return &SensitiveWordCheckResult{
+			Contains:     false,
+			FilteredText: text,
+			Matches:      []SensitiveWordMatch{},
+		}, nil
+	}
+	return &SensitiveWordCheckResult{
+		Contains:     len(matches) > 0,
+		FilteredText: replaceWithAsterisk(textRunes, matches),
+		Matches:      matches,
+	}, nil
+}
+
 func (s *sensitiveWordService) reloadTrie(ctx context.Context) error {
 	words, err := s.repository.List(ctx)
 	if err != nil {
@@ -177,20 +177,6 @@ func (s *sensitiveWordService) reloadTrie(ctx context.Context) error {
 	s.maxWordLen = maxWordLen
 	s.mu.Unlock()
 	return nil
-}
-
-func normalizeSensitiveWordInput(word, category string) (string, string, error) {
-	word = strings.TrimSpace(word)
-	if word == "" {
-		return "", "", errors.New("word must not be empty")
-	}
-
-	category = strings.TrimSpace(category)
-	if category == "" {
-		category = "default"
-	}
-
-	return word, category, nil
 }
 
 func buildSensitiveWordTrie(words []model.SensitiveWord) (*sensitiveWordTrieNode, int) {
@@ -309,4 +295,18 @@ func replaceWithAsterisk(textRunes []rune, matches []SensitiveWordMatch) string 
 		}
 	}
 	return string(textRunes)
+}
+
+func normalizeSensitiveWordInput(word, category string) (string, string, error) {
+	word = strings.TrimSpace(word)
+	if word == "" {
+		return "", "", errors.New("word must not be empty")
+	}
+
+	category = strings.TrimSpace(category)
+	if category == "" {
+		category = "default"
+	}
+
+	return word, category, nil
 }
