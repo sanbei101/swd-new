@@ -23,9 +23,9 @@ type sensitiveWordRepository struct {
 }
 
 func NewSensitiveWordRepository(repository *Repository, conf *viper.Viper) (SensitiveWordRepository, error) {
-	dsn := conf.GetString("data.postgres.sensitive_words_dsn")
+	dsn := conf.GetString("data.postgres.dsn")
 	if dsn == "" {
-		return nil, fmt.Errorf("data.postgres.sensitive_words_dsn is required")
+		return nil, fmt.Errorf("data.postgres.dsn is required")
 	}
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
