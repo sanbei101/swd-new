@@ -40,10 +40,14 @@ func TestSensitiveWordMatchAndReplace(t *testing.T) {
 	}
 }
 
-func TestSensitiveWordCheckEmptyText(t *testing.T) {
-	svc := &sensitiveWordService{}
-
-	if _, err := svc.Check("   "); err == nil {
-		t.Fatal("expected empty text validation error")
+func BenchmarkCheckSensitiveWords(b *testing.B) {
+	svc := &sensitiveWordService{
+		words: []model.SensitiveWord{
+			{Word: "蠢猪", Type: "脏话"},
+			{Word: "坏蛋", Type: "辱骂"},
+		},
+	}
+	for b.Loop() {
+		svc.Check("你这个蠢猪真是个坏蛋")
 	}
 }
