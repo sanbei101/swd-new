@@ -27,9 +27,17 @@ type SensitiveWordService interface {
 	Check(text string) (*SensitiveWordCheckResult, error)
 }
 
+type sensitiveWordTrieNode struct {
+	children map[rune]*sensitiveWordTrieNode
+	word     string
+	category string
+	terminal bool
+}
+
 type sensitiveWordService struct {
 	*Service
-	words []model.SensitiveWord
+	root       *sensitiveWordTrieNode
+	maxWordLen int
 }
 
 func NewSensitiveWordService(service *Service, sensitiveWordRepository repository.SensitiveWordRepository) (SensitiveWordService, error) {
@@ -41,13 +49,12 @@ func NewSensitiveWordService(service *Service, sensitiveWordRepository repositor
 		return nil, errors.New("no sensitive words loaded from postgres")
 	}
 
-	sort.SliceStable(words, func(i, j int) bool {
-		return len([]rune(words[i].Word)) > len([]rune(words[j].Word))
-	})
+	root, maxWordLen := buildSensitiveWordTrie(words)
 
 	return &sensitiveWordService{
-		Service: service,
-		words:   words,
+		Service:    service,
+		root:       root,
+		maxWordLen: maxWordLen,
 	}, nil
 }
 
@@ -57,63 +64,112 @@ func (s *sensitiveWordService) Check(text string) (*SensitiveWordCheckResult, er
 		return nil, errors.New("text must not be empty")
 	}
 
-	matches := s.matchAll(text)
+	textRunes := []rune(text)
+	matches := s.matchAll(textRunes)
 	return &SensitiveWordCheckResult{
 		Contains:     len(matches) > 0,
-		FilteredText: replaceWithAsterisk(text, matches),
+		FilteredText: replaceWithAsterisk(textRunes, matches),
 		Matches:      matches,
 	}, nil
 }
 
-func (s *sensitiveWordService) matchAll(text string) []SensitiveWordMatch {
-	textRunes := []rune(text)
-	if len(textRunes) == 0 || len(s.words) == 0 {
+func buildSensitiveWordTrie(words []model.SensitiveWord) (*sensitiveWordTrieNode, int) {
+	root := &sensitiveWordTrieNode{}
+	maxWordLen := 0
+
+	for _, word := range words {
+		wordRunes := []rune(word.Word)
+		if len(wordRunes) == 0 {
+			continue
+		}
+		if len(wordRunes) > maxWordLen {
+			maxWordLen = len(wordRunes)
+		}
+
+		node := root
+		for _, r := range wordRunes {
+			if node.children == nil {
+				node.children = make(map[rune]*sensitiveWordTrieNode)
+			}
+			child := node.children[r]
+			if child == nil {
+				child = &sensitiveWordTrieNode{}
+				node.children[r] = child
+			}
+			node = child
+		}
+
+		node.terminal = true
+		node.word = word.Word
+		node.category = word.Type
+	}
+
+	return root, maxWordLen
+}
+
+func (s *sensitiveWordService) matchAll(textRunes []rune) []SensitiveWordMatch {
+	if len(textRunes) == 0 || s.root == nil || s.maxWordLen == 0 {
 		return []SensitiveWordMatch{}
 	}
 
-	matches := make([]SensitiveWordMatch, 0)
-	occupied := make([]bool, len(textRunes))
+	candidates := make([]SensitiveWordMatch, 0)
+	for start := range textRunes {
+		node := s.root
+		limit := len(textRunes)
+		if maxEnd := start + s.maxWordLen; maxEnd < limit {
+			limit = maxEnd
+		}
 
-	for _, word := range s.words {
-		wordRunes := []rune(word.Word)
-		if len(wordRunes) == 0 || len(wordRunes) > len(textRunes) {
+		for end := start; end < limit; end++ {
+			node = node.children[textRunes[end]]
+			if node == nil {
+				break
+			}
+			if node.terminal {
+				candidates = append(candidates, SensitiveWordMatch{
+					Word:     node.word,
+					Category: node.category,
+					StartPos: start,
+					EndPos:   end + 1,
+				})
+			}
+		}
+	}
+
+	if len(candidates) == 0 {
+		return []SensitiveWordMatch{}
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		leftLen := candidates[i].EndPos - candidates[i].StartPos
+		rightLen := candidates[j].EndPos - candidates[j].StartPos
+		if leftLen != rightLen {
+			return leftLen > rightLen
+		}
+		if candidates[i].StartPos != candidates[j].StartPos {
+			return candidates[i].StartPos < candidates[j].StartPos
+		}
+		return candidates[i].EndPos < candidates[j].EndPos
+	})
+
+	matches := make([]SensitiveWordMatch, 0, len(candidates))
+	occupied := make([]bool, len(textRunes))
+	for _, candidate := range candidates {
+		overlap := false
+		for i := candidate.StartPos; i < candidate.EndPos; i++ {
+			if occupied[i] {
+				overlap = true
+				break
+			}
+		}
+		if overlap {
 			continue
 		}
 
-		for start := 0; start <= len(textRunes)-len(wordRunes); start++ {
-			skip := false
-			for i := start; i < start+len(wordRunes); i++ {
-				if occupied[i] {
-					skip = true
-					break
-				}
-			}
-			if skip {
-				continue
-			}
-
-			ok := true
-			for i := range wordRunes {
-				if textRunes[start+i] != wordRunes[i] {
-					ok = false
-					break
-				}
-			}
-			if !ok {
-				continue
-			}
-
-			for i := start; i < start+len(wordRunes); i++ {
-				occupied[i] = true
-			}
-
-			matches = append(matches, SensitiveWordMatch{
-				Word:     word.Word,
-				Category: word.Type,
-				StartPos: start,
-				EndPos:   start + len(wordRunes),
-			})
+		for i := candidate.StartPos; i < candidate.EndPos; i++ {
+			occupied[i] = true
 		}
+		matches = append(matches, candidate)
 	}
 
 	sort.SliceStable(matches, func(i, j int) bool {
@@ -126,8 +182,8 @@ func (s *sensitiveWordService) matchAll(text string) []SensitiveWordMatch {
 	return matches
 }
 
-func replaceWithAsterisk(text string, matches []SensitiveWordMatch) string {
-	runes := []rune(text)
+func replaceWithAsterisk(textRunes []rune, matches []SensitiveWordMatch) string {
+	runes := append([]rune(nil), textRunes...)
 	for _, match := range matches {
 		for i := match.StartPos; i < match.EndPos && i < len(runes); i++ {
 			runes[i] = '*'
