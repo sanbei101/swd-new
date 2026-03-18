@@ -11,6 +11,7 @@ import (
 
 type SensitiveWordRepository interface {
 	List(ctx context.Context) ([]model.SensitiveWord, error)
+	ListPage(ctx context.Context, offset, limit int) ([]model.SensitiveWord, int64, error)
 	Create(ctx context.Context, word *model.SensitiveWord) error
 	Update(ctx context.Context, word *model.SensitiveWord) error
 	Delete(ctx context.Context, id uint) error
@@ -35,6 +36,28 @@ func (r *sensitiveWordRepository) List(ctx context.Context) ([]model.SensitiveWo
 
 	r.logger.Info("sensitive words loaded", zap.Int("count", len(words)))
 	return words, nil
+}
+
+func (r *sensitiveWordRepository) ListPage(ctx context.Context, offset, limit int) ([]model.SensitiveWord, int64, error) {
+	var total int64
+	if err := r.db.WithContext(ctx).Model(&model.SensitiveWord{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	words := make([]model.SensitiveWord, 0, limit)
+	if total == 0 {
+		return words, 0, nil
+	}
+
+	if err := r.db.WithContext(ctx).
+		Order("id ASC").
+		Offset(offset).
+		Limit(limit).
+		Find(&words).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return words, total, nil
 }
 
 func (r *sensitiveWordRepository) Create(ctx context.Context, word *model.SensitiveWord) error {

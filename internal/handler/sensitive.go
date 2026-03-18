@@ -54,7 +54,10 @@ func (h *SensitiveCheckHandler) Check(ctx *gin.Context) {
 }
 
 func (h *SensitiveCheckHandler) ListWords(ctx *gin.Context) {
-	result, err := h.sensitiveWordService.ListWords(ctx.Request.Context())
+	pageNum, _ := strconv.Atoi(ctx.DefaultQuery("pageNum", "1"))
+	pageSize, _ := strconv.Atoi(ctx.DefaultQuery("pageSize", "20"))
+
+	result, err := h.sensitiveWordService.ListWords(ctx.Request.Context(), pageNum, pageSize)
 	if err != nil {
 		resp.HandleError(ctx, http.StatusInternalServerError, 500, err.Error(), nil)
 		return

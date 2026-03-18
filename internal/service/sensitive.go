@@ -9,6 +9,7 @@ import (
 
 	"swd-new/internal/model"
 	"swd-new/internal/repository"
+	"swd-new/pkg/response"
 
 	"gorm.io/gorm"
 )
@@ -38,7 +39,7 @@ type UpdateSensitiveWordInput struct {
 
 type SensitiveWordService interface {
 	Check(text string) (*SensitiveWordCheckResult, error)
-	ListWords(ctx context.Context) ([]model.SensitiveWord, error)
+	ListWords(ctx context.Context, pageNum, pageSize int) (*response.Page[[]model.SensitiveWord], error)
 	CreateWord(ctx context.Context, input CreateSensitiveWordInput) (*model.SensitiveWord, error)
 	UpdateWord(ctx context.Context, id uint, input UpdateSensitiveWordInput) (*model.SensitiveWord, error)
 	DeleteWord(ctx context.Context, id uint) error
@@ -92,8 +93,13 @@ func (s *sensitiveWordService) Check(text string) (*SensitiveWordCheckResult, er
 	}, nil
 }
 
-func (s *sensitiveWordService) ListWords(ctx context.Context) ([]model.SensitiveWord, error) {
-	return s.repository.List(ctx)
+func (s *sensitiveWordService) ListWords(ctx context.Context, pageNum, pageSize int) (*response.Page[[]model.SensitiveWord], error) {
+	pageNum, pageSize, offset, limit := response.PageOffset(pageNum, pageSize)
+	words, total, err := s.repository.ListPage(ctx, offset, limit)
+	if err != nil {
+		return nil, err
+	}
+	return response.ParsePage(words, pageNum, pageSize, total), nil
 }
 
 func (s *sensitiveWordService) CreateWord(ctx context.Context, input CreateSensitiveWordInput) (*model.SensitiveWord, error) {
