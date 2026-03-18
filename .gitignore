@@ -1,3 +1,4 @@
 /storage/
 .idea
 *.log
+config/local.yml
